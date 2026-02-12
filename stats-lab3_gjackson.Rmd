@@ -3,7 +3,7 @@ title: 'BINF-6310-stats-lab3'
 author: "Gloria Jackson"
 date: "2026-02-05"
 Instructor: "Anthony Fodor, PhD"
-output: pdf
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
