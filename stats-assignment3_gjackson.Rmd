@@ -1,0 +1,208 @@
+---
+title: 'BINF-6310-stats-Assignment3 (Lab 4)'
+author: "Gloria Jackson"
+date: "2026-02-19"
+Instructor: "Anthony Fodor, PhD"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Problem 1A
+
+Plot the prior graph for a situation for a coin where the prior belief for p(head) is represented by the following R code :
+                                
+                                dexp(x, rate =5) / 0.9932621
+                                
+for values of 0 <= x <= 1 and 0 otherwise.  (We choose the denominator to make the Integral between 0 and 1 sum to 1).
+
+```{r}
+rm(list=ls())
+# define x values between 0 and 1
+x <- seq(0, 1, length = 1000)
+
+# define the prior density
+prior <- dexp(x, rate = 5) / 0.9932621
+
+# plot
+plot(x, prior, type = "l", lwd = 2,
+     xlab = "p (Probability of Heads)",
+     ylab = "Prior Density",
+     main = "Prior Distribution for p")
+
+```
+
+# Problem 1B
+
+Calculate the posterior graph with both the Metropolis algorithm and grid approximation for a case with 14 heads and 10 tails (where x = prob(head)) .
+Show the two methods roughly agree. Compare these to a plot with a posterior for new data of 14 heads and 10 tails with a prior with beta(40,40).
+
+(So for the observation of 14 heads and 10 tails you will end up with a graph with three plots superimposed: (i) the Metropolis algorithm with an exp prior, (ii) grid approximation with an exp prior and (iii) exact analytical solution from a beta(40,40) prior make the plots different colors so you can visualize them…)
+
+
+```{r}
+rm(list=ls())
+
+# data
+heads <- 14
+tails <- 10
+
+# metropolis algorithm
+set.seed(1) # for reproducibility
+
+n_iter <- 25000
+samples <- numeric(n_iter)
+samples[1] <- 0.5
+
+proposal_sd <- 0.05
+
+posterior_fun <- function(x) {
+  if (x <= 0 || x >= 1) return(0)
+  
+  likelihood <- x^heads * (1 - x)^tails
+  prior <- dexp(x, rate=5) / 0.9932621
+  
+  return(likelihood * prior)
+}
+
+for (i in 2:n_iter) {
+  
+  proposal <- rnorm(1, samples[i-1], proposal_sd)
+  
+  accept_ratio <- posterior_fun(proposal) /
+                  posterior_fun(samples[i-1])
+  
+  if (runif(1) < accept_ratio) {
+    samples[i] <- proposal
+  } else {
+    samples[i] <- samples[i-1]
+  }
+}
+
+# burn-in
+someDistribution <- samples[5000:n_iter]
+
+# histogram to define x values
+myHist <- hist(someDistribution, breaks=200, plot=FALSE)
+
+x_vals <- myHist$mids
+
+# normalize metropolis
+metro_density <- myHist$counts / length(someDistribution)
+
+# grid approximation
+likelihood <- x_vals^heads * (1 - x_vals)^tails
+prior_exp <- dexp(x_vals, rate=5) / 0.9932621
+
+posterior_grid <- likelihood * prior_exp
+posterior_grid <- posterior_grid / sum(posterior_grid)
+
+# posterior
+posterior_beta <- dbeta(x_vals, 40 + heads, 40 + tails)
+posterior_beta <- posterior_beta / sum(posterior_beta)
+
+# plot
+y_max <- max(c(metro_density, posterior_grid, posterior_beta))
+
+plot(x_vals, metro_density, type="l",col="black",lwd=2,
+     xlab="p (Probability of Heads)",ylab="Posterior",
+     main="Posterior Comparison",xlim=c(0,1), ylim=c(0, y_max))
+
+lines(x_vals, posterior_grid, col="blue", lwd=2)
+lines(x_vals, posterior_beta, col="red", lwd=2)
+
+legend("topright",legend=c("Metropolis (Exp prior)","Grid (Exp prior)",
+                "Exact Beta(40,40)"),col=c("black","blue","red"),lwd=2)
+
+
+```
+
+The plot above shows the posterior for the Metropolis algorithm shown in black, the posterior for the grid approximation shown in blue, and the posterior for the exact analytical solution from a beta(40,40) prior shown in red. The black line (Metropolis algorithm) and the blue line (grid approximation) are very similar and show similar, broad distributions with peaks at a posterior of ~0.02 that are centered at p = ~0.55. The red line (exact beta(40,40) prior) is way more narrow with a peak at a posterior of ~0.04 that is centered at p = ~0.5.
+
+# Problem 1C
+
+Repeat the above calculation but for a case of 583 heads and 417 tails. 
+(You may need to adjust your model step parameters to try and get the grid and Metropolis graphs to match up).  How do the three posterior curves relate to each other now?  Why does this plot look different than the plot in (1B)?
+
+```{r}
+rm(list=ls())
+# data
+heads <- 583
+tails <- 417
+
+# metropolis
+set.seed(1) # for reproducibility
+
+n_iter <- 30000
+samples <- numeric(n_iter)
+samples[1] <- heads / (heads + tails)   # starting value adjusted to data
+
+proposal_sd <- 0.01   # smaller step size!
+
+posterior_fun <- function(x) {
+  if (x <= 0 || x >= 1) return(0)
+  
+  likelihood <- x^heads * (1 - x)^tails
+  prior <- dexp(x, rate=5) / 0.9932621
+  
+  return(likelihood * prior)
+}
+
+for (i in 2:n_iter) {
+  
+  proposal <- rnorm(1, samples[i-1], proposal_sd)
+  
+  accept_ratio <- posterior_fun(proposal) /
+                  posterior_fun(samples[i-1])
+  
+  if (runif(1) < accept_ratio) {
+    samples[i] <- proposal
+  } else {
+    samples[i] <- samples[i-1]
+  }
+}
+
+# burn-in
+someDistribution <- samples[5000:n_iter]
+
+# histogram to define x values
+myHist <- hist(someDistribution, breaks=200, plot=FALSE)
+x_vals <- myHist$mids
+
+metro_density <- myHist$counts / length(someDistribution)
+
+# grid approximation
+likelihood <- x_vals^heads * (1 - x_vals)^tails
+prior_exp <- dexp(x_vals, rate=5) / 0.9932621
+
+posterior_grid <- likelihood * prior_exp
+posterior_grid <- posterior_grid / sum(posterior_grid)
+
+# posterior
+posterior_beta <- dbeta(x_vals, 40 + heads, 40 + tails)
+posterior_beta <- posterior_beta / sum(posterior_beta)
+
+# plot
+y_max <- max(c(metro_density,posterior_grid,posterior_beta))
+
+plot(x_vals, metro_density,type="l",col="black",lwd=2,
+     xlab="p (Probability of Heads)",ylab="Posterior",
+     main="Posterior Comparison (583H, 417T)",
+     xlim=c(0.55, 0.62),   # to zoooooom in a bit
+     ylim=c(0, y_max))
+
+lines(x_vals, posterior_grid, col="blue", lwd=2)
+lines(x_vals, posterior_beta, col="red", lwd=2)
+
+legend("topright",legend=c("Metropolis (Exp prior)","Grid (Exp prior)",
+                "Exact Beta(40,40)"), col=c("black","blue","red"),lwd=2)
+
+```
+
+The plot above shows the posterior for the Metropolis algorithm shown in black, the posterior for the grid approximation shown in blue, and the posterior for the exact analytical solution from a beta(40,40) prior shown in red. Similar to the previous problem (1B), the black line (Metropolis algorithm) and the blue line (grid approximation) have similar broad curves that both peak at a posterior of ~0.012 and are centered at p = ~0.582. Contrary to the previous problem (1B), the red line (exact beta(40,40) prior) is much broader and displays a curve that looks much more similar to the results from the Metropolis algorithm (black line) and grid approximation (black line). The red line has a peak at a posterior of ~0.013 and is centered at p = ~0.576.
+
+This plot looks different from the plot in (1B) because the sample size is a lot larger. This increase in the total number of observations led to the likelihood overwhelming the prior. Essentially, the larger sample size has more influence over the prior and cause the posterior distribution to converge towards the observed data.
+
+#### Disclaimer: AI was used to help generate some code.
