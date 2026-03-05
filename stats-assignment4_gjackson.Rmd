@@ -1,0 +1,224 @@
+---
+title: 'BINF-6310-stats-Assignment4'
+author: "Gloria Jackson"
+date: "2026-02-26"
+Instructor: "Anthony Fodor, PhD"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1
+
+Each row in the spreadsheet represents a different gene in an RNA-seq experiment. The samples are E. Coli derived from two different mice under identical conditions (i.e. biological replicates).
+
+Read the dataset into R using commands something like...
+
+setwd("C:\\classes\\Advanced_Stats_Spring2022\\Lab4_HW1")
+
+myT \<- read.table("nc101_scaff_dataCounts.txt",header=TRUE,row.names=1)
+
+```{r}
+rm(list=ls())
+le_data <- read.table("nc101_scaff_dataCounts.txt",header=TRUE,row.names=1)
+```
+
+# Question 2
+
+On a log10-log10 scale, show a plot of the counts for the two samples “D2_01” and “D2_02”.
+
+Qualitatively, do the biological replicates appear to have similar patterns of gene expression?
+
+```{r}
+# extract the two samples
+x <- le_data$D2_01
+y <- le_data$D2_02
+
+# make log10-log10 scatter plot (with pseudocount)
+plot(log10(x + 1),log10(y + 1),pch = 16, cex = 0.6,
+     xlab = "log10(D2_01 counts + 1)", ylab = "log10(D2_02 counts + 1)",
+     main = "Log10-Log10 Gene Counts: D2_01 vs D2_02")
+
+# add y = x reference line
+abline(0, 1, col = "red", lwd = 2)
+```
+
+Qualitatively, the replicates do appear to have similar patterns of gene expression because the replicates show a strong positive correlation.
+
+# Question 3
+
+On a log10-log10 scale, plot the variance of all genes (across all genes) vs. the mean (across all genes) with a red line on your graph representing the identity line. Does the mean equal the variance for these samples?\
+(The commands apply(myT, 1, mean) and apply(myT, 1, var) will be of some use).
+
+```{r}
+# calculate mean and variance for each gene (row-wise)
+gene_means <- apply(le_data, 1, mean)
+gene_vars <- apply(le_data, 1, var)
+
+# plot mean vs variance on log10-log10 scale (adding +1 pseudocount)
+plot(log10(gene_means + 1), log10(gene_vars + 1), 
+     pch = 16, cex = 0.5,
+     xlab = "log10(Mean + 1)", ylab = "log10(Variance + 1)",
+     main = "Gene Expression: Mean vs. Variance")
+
+# add the identity line (y = x)
+abline(0, 1, col = "red", lwd = 2)
+```
+
+The mean does *not* equal the variance for these samples. In fact, the variance is a lot higher than the mean for most of the genes.
+
+# Question 4
+
+Consider the first gene in the spreadsheet (e.g. NC101_00003). Make a two by two contingency table (I could not get the table template from the instructions to format nicely in R, my apologies!) and use the two sided fisher.test to generate a p-value for the null hypothesis that the columns and rows of the contingency table are independent.
+
+```{r}
+# get the counts for the first gene (NC101_00003)
+gene_counts_d2_01 <- le_data$D2_01[1]
+gene_counts_d2_02 <- le_data$D2_02[1]
+
+# get the sum of all other genes for each sample
+other_counts_d2_01 <- sum(le_data$D2_01) - gene_counts_d2_01
+other_counts_d2_02 <- sum(le_data$D2_02) - gene_counts_d2_02
+
+# create the 2x2 contingency table
+contingency_table <- matrix(c(gene_counts_d2_01, other_counts_d2_01,
+                    gene_counts_d2_02, other_counts_d2_02),nrow = 2,
+                    dimnames = list(Gene_Status = c("Assigned to NC101_00003", 
+                    "Not assigned to NC101_00003"),Sample = 
+                      c("Sequences in D2_01", "Sequences in D2_02")))
+
+# view the table
+print(contingency_table)
+
+# run two sided fisher
+fisher_result <- fisher.test(contingency_table)
+print(fisher_result)
+```
+
+The p-value from the two-sided fisher.test is 1.67e-11, which means the null hypothesis should be rejected. This means that the rows and columns are not independent, and there is a significant association between them.
+
+# Question 5: Part 1
+
+Now generate a p-value for all the genes in the spreadsheet from the Fisher test. Plot out those p-values in a histogram. Are they uniformly distributed? Would you expect them to be? Are the p-values more significant, less significant or what we would expect under a uniform distribution? 
+
+```{r}
+# pre-calculate column sums
+total_d2_01 <- sum(le_data$D2_01)
+total_d2_02 <- sum(le_data$D2_02)
+
+# use sapply to run Fisher's test for every row
+all_pvals <- sapply(1:nrow(le_data), function(i) {
+  gene_1 <- le_data$D2_01[i]
+  gene_2 <- le_data$D2_02[i]
+  
+  # create the matrix for this specific gene
+  mat <- matrix(c(gene_1, total_d2_01 - gene_1,
+                  gene_2, total_d2_02 - gene_2), 
+                nrow = 2)
+  
+  return(fisher.test(mat)$p.value)
+})
+
+# plot histogram
+hist(all_pvals, breaks = 50, col = "skyblue",
+     main = "Histogram of Fisher's P-values (All Genes)", xlab = "p-value")
+```
+
+Based on the histogram above, the p-values are *not* uniformly distributed. There is a huge spike at p-value = 1, and an even more massive spike at p-value = 0. According to the null hypothesis, the p-values should be uniformly distributed, but I would not expect to see this trend since the dataset comes from biological data. The p-values are a lot more significant than one would expect under a uniform distribution because a large fraction of the genes have very low p-values.
+
+# Question 5: Part 2
+
+How does the p-value distribution change if you remove low abundance genes (with for example myT \<- myT[ (myT$D2_01 + myT$D2_02 \> 50),]
+
+```{r}
+# filter for genes with total counts > 50
+le_data_filtered <- le_data[(le_data$D2_01 + le_data$D2_02 > 50), ]
+
+# pre-calculate column sums
+total_d2_01 <- sum(le_data_filtered$D2_01)
+total_d2_02 <- sum(le_data_filtered$D2_02)
+
+# use sapply to run Fisher's test for every row
+all_pvals_filtered <- sapply(1:nrow(le_data_filtered), function(i) {
+  gene_1 <- le_data_filtered$D2_01[i]
+  gene_2 <- le_data_filtered$D2_02[i]
+  
+  # create the matrix for this specific gene
+  mat <- matrix(c(gene_1, total_d2_01 - gene_1,
+                  gene_2, total_d2_02 - gene_2), 
+                nrow = 2)
+  
+  return(fisher.test(mat)$p.value)
+})
+
+# plot histogram
+hist(all_pvals_filtered, breaks = 50, col = "skyblue",
+     main = "Histogram of Fisher's P-values (Filtered Genes)", xlab = "p-value")
+```
+
+When low abundance genes are removed, the p-value distribution changes by no longer having a huge spike at p-value = 1. Now, the frequency of genes that have a p-value of 1 is not that significant. The most noticeable, most massive peak is now only observed when the p-value is zero.
+
+# Question 6
+
+Add 1 to every value in the table ( with something like myT = myT + 1 ). This is called adding a pseudo-count. Now consider the first gene (NC101_00003 ) again. From the first experiment, calculate
+
+expected frequency = p = (\# Assigned to NC101_00003 in D2_01)/total \# of sequences in D2_01)
+
+Now use poisson.test to assign a p-value for the null hypothesis that value of p derived from D2_01 could have produced the number of reads observed for this gene in D2_02 .
+
+```{r}
+# add pseudocount to the entire dataset
+le_data_pseudo <- le_data + 1
+
+# extract values for the first gene (NC101_00003)
+# REMEMBER!!!!!! R indexes start at 1 so [1,] is the first gene
+gene_d2_01 <- le_data_pseudo$D2_01[1]
+gene_d2_02 <- le_data_pseudo$D2_02[1]
+
+# calculate the total sequences in each sample
+total_d2_01 <- sum(le_data_pseudo$D2_01)
+total_d2_02 <- sum(le_data_pseudo$D2_02)
+
+# calculate the expected frequency (p) from D2_01
+p_expected <- gene_d2_01 / total_d2_01
+
+# use poisson.test where x = observed counts in D2_02, T = the 'time' or 'area' 
+# (total reads in D2_02), & r = the hypothesized rate (p_expected)
+poisson_result <- poisson.test(x = gene_d2_02, T = total_d2_02, r = p_expected)
+
+# print p-value
+print(poisson_result$p.value)
+```
+
+
+# Question 7
+
+Repeat the calculation in (6) for every gene in the spreadsheet. Graph these p-values against the p-values produced in (5) on a log10-log10 plot. How well do they agree?
+
+(Note: since the mean does not equal the variance, the models make assumptions that are not supported by the data! Also, with n=1 in both conditions, our sample size is small and we would want to be very careful about putting too much weight in any conclusions we draw from such a small sample size...)
+
+```{r}
+# 1. Run Poisson for the SAME filtered set used in Q5
+poisson_pvals_filtered <- sapply(1:nrow(le_data_filtered), function(i) {
+  p_expected <- le_data_filtered$D2_01[i] / sum(le_data_filtered$D2_01)
+  res <- poisson.test(x = le_data_filtered$D2_02[i], 
+                      T = sum(le_data_filtered$D2_02), 
+                      r = p_expected)
+  return(res$p.value)
+})
+
+# 2. Call the variable you saved in Question 5
+plot(log10(all_pvals_filtered), log10(poisson_pvals_filtered),
+     pch = 16, cex = 0.6,
+     xlab = "log10(Fisher P-values from Q5)", 
+     ylab = "log10(Poisson P-values from Q7)",
+     main = "Comparison of P-values")
+
+abline(0, 1, col = "red")
+```
+
+The plot above shows a strong agreeance between the p-values assigned by the two-sided fisher.test and the poisson.test after filtering out the low abundance genes. The majority of the data points are really close to the identity line. However, it is important to note that just because these results appear favorable does not mean that they are a good fit for the biological dataset since the mean does not equal the variance as seen in Question 3.
+
+#### Disclaimer: AI was used to help generate some code.
