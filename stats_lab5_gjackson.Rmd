@@ -1,0 +1,170 @@
+---
+title: 'BINF-6310-stats-Lab5'
+author: "Gloria Jackson"
+date: "2026-04-01"
+Instructor: "Anthony Fodor, PhD"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1A
+
+Download the data from here examining the relationship between the number of cell divisions and cancer risk: <https://fodorclasses.github.io/classes/stats2020/cancerRisk.txt> On a log10-log10 scale graph Lifetime_cancer_risk (on the y-axis) vs. CumulativeCellDivisions (on the x-axis). (This reproduces Fig. 1 from the paper).
+
+(You can read in the file with read.table("cancerRisk.txt", header=TRUE, sep="\t")
+
+```{r}
+rm(list=ls())
+df <- read.table("cancerRisk.txt", header=TRUE, sep="\t")
+
+# load ggplot2
+library(ggplot2)
+
+
+ggplot(df, aes(x = CumulativeCellDivisions, y = Lifetime_cancer_risk)) +
+  geom_point(color = "steelblue", size = 2) +
+  # apply the log10 transformation to both axes
+  scale_x_log10(breaks = scales::trans_breaks("log10", function(x) 10^x),
+                labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+  scale_y_log10(breaks = scales::trans_breaks("log10", function(x) 10^x),
+                labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+  # adding clean labels and theme
+  labs(title = "Cancer Risk vs. Cumulative Cell Divisions",
+       x = "Cumulative Cell Divisions (log10)",
+       y = "Lifetime Cancer Risk (log10)") +
+  theme_minimal() +
+  annotation_logticks() # adds nice tick marks
+
+```
+
+# Question 1B
+
+Using the lm function, fit a linear model with Lifetime_cancer_risk as the Y variable and CumulativeCellDivisions as the x-data. Add the regression line to the plot using the function abline(myLm) (where myLm is the linear model you created).
+
+```{r}
+# fit the linear model using log10 transformed data
+myLm <- lm(log10(Lifetime_cancer_risk) ~ log10(CumulativeCellDivisions), data = df)
+
+# view the summary to see R-squared and coefficients
+summary(myLm)
+```
+
+```{r}
+# 1. create the scatter plot with log-log axes
+plot(df$CumulativeCellDivisions, df$Lifetime_cancer_risk, 
+     log = "xy", 
+     pch = 19, 
+     col = "blue",
+     xlab = "Cumulative Cell Divisions", 
+     ylab = "Lifetime Cancer Risk",
+     main = "Cancer Risk vs. Cell Divisions")
+
+# 2. add the regression line
+abline(myLm, col = "red", lwd = 2)
+```
+
+# Question 1C
+
+What is the p-value for the null hypothesis that the slope of the regression between these two variables is zero? What is the r-squared value of the model?
+
+According to the summary of my linear model, the p-value is **5.124e-08** and the r-squared value of the model is **0.6463**.
+
+# Question 1D
+
+Are the assumptions of constant variance and normal distribution of the residues reasonable for this model? Justify your answer.
+
+The assumptions of constant variance and normal distribution of the residues is reasonable for this model because, looking at the 'Residuals' section in the summary of the model from question 1B, the 1st quartile (1Q) and the 3rd quartile (3Q) are roughly equidistant from zero with 1Q being -0.46 and 3Q being 0.43. This suggests a balanced variance. Additionally, also looking at the 'Residuals' section in the summary of the model from question 1B, the median of the residuals of 0.06, which is close to zero. This value suggests a symmetrical distribution, which in turn suggests a normal distribution.
+
+# Question 2
+
+Consider the case-control file for the colorectal adenomas data set that is here:
+
+```         
+http://afodor.github.io/classes/stats2015/caseControlData.txt
+```
+
+A separate file gives obesity (BMI) data for these same subjects:
+
+```         
+http://afodor.github.io/classes/stats2015/BMI_Data.txt
+```
+
+For each OTU in the spreadsheet, generate a p-value from linear regression comparing BMI to the relative abundance of each OTU. Graph out all the p-values. Do they appear uniformly distributed? Does the microbial community appear to be influencing body weight in this cohort? Are any of these associations significant at a 10% false discovery rate?
+
+Hints: To lookup the ids in the BMI table, you will need to do some processing on the “sample” column in the caseControl file. The following code will convert the a sampleID so that it will match the BMI file.
+
+```         
+# remove case and control
+```
+
+key \<- sub("case", "", sampleID) key \<- sub("control", "", key)
+
+```         
+# remove extraneous information from the suffix
+key <- strsplit( key, "_")[[1]][1]
+```
+
+Also, to get the p-value out of the linear model try: anova( myLm)\$"Pr(\>F)"[1]
+
+```{r}
+# read in data
+cc_data <- read.table("caseControlData.txt", header=TRUE, sep="\t")
+bmi_data <- read.table("BMI_Data.txt", header=TRUE, sep="\t")
+
+# clean the IDs in cc_data to match BMI_data using the logic 
+# from hint to every row
+clean_ids <- sapply(cc_data$sample, function(x) {
+  key <- sub("case", "", x)
+  key <- sub("control", "", key)
+  key <- strsplit(key, "_")[[1]][1]
+  return(key)
+})
+
+cc_data$id_clean <- clean_ids
+
+# merge the dataframes based on the cleaned ID to align the 
+# BMI values with the correct OTU rows
+merged_data <- merge(cc_data, bmi_data, by.x="id_clean", by.y="studyid")
+
+# identify which columns are actually OTUs
+otu_names <- names(merged_data)[grep("OTU", names(merged_data))]
+
+p_values <- c()
+
+# loop through each OTU name
+for (otu in otu_names) {
+    # extract columns as a vector
+    x_column <- merged_data[[otu]]
+    y_column <- merged_data$bmi
+    
+    # fit the model
+    myLm <- lm(y_column ~ x_column)
+    
+    # extract p-value
+    # using 'tryCatch' to handle any cases where OTU has just zeros
+    p_val <- tryCatch(anova(myLm)$"Pr(>F)"[1], error = function(e) return(NA))
+    p_values <- c(p_values, p_val)
+}
+
+# remove any NA values from failed regressions
+p_values <- p_values[!is.na(p_values)]
+
+# plot hist
+hist(p_values, breaks=20, main="P-value Distribution", 
+     xlab="P-value", col="steelblue")
+```
+
+```{r 10% FDR}
+# calculate q-values (FDR adjusted p-values)
+q_values <- p.adjust(p_values, method="fdr")
+
+# count how many are significant at 10%
+sum(q_values < 0.10)
+```
+
+The p-values do **not** appear to be uniformly distributed. The microbial community appears not to be influencing body weight in this cohort because there is a small spike in the graph near zero, however there are higher spikes around p-values of 0.4, 0.6, and 0.9. This means that the majority of individual OTUs have no measurable influence on BMI. Additionally, *none* of these associations are significant at a 10% false discovery rate. This suggests that, after correcting for multiple testing, the individual microbial effects are too weak to be distinguished from general noise.
+
+#### Disclaimer: AI was used to help generate some code.
