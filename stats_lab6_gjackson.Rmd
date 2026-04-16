@@ -1,0 +1,264 @@
+---
+title: 'BINF-6310-stats-Lab6'
+author: "Gloria Jackson"
+date: "2026-04-09"
+Instructor: "Anthony Fodor, PhD"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1
+We again return to our RNA seq dataset of E. Coli genes from mice.
+
+The URL is here:
+http://afodor.github.io/classes/stats2015/longitdunalRNASeqData.zip
+As before, read and normalize the counts table ( “nc101_scaff_dataCounts.txt “ into R).  For example:
+setwd("C:\\somewhere")
+
+myT<-read.table("nc101_scaff_dataCounts.txt",sep="\t",header=TRUE,row.names=1)
+
+- remove rare genes
+myT <- myT[ apply( myT,1, median)> 5,]
+
+myTNorm <- myT
+for ( i in 1:ncol(myT))
+{
+	colSum = sum(myT[,i])
+	myTNorm[,i] =myTNorm[,i]/colSum
+}
+(The first 3 columns are “day 2”, the next 3 columns are “week 12” and the last 5 are “week 18” (even though they say w20)).  
+
+```{r data prep}
+rm(list=ls())
+myT<-read.table("nc101_scaff_dataCounts.txt",sep="\t",header=TRUE,row.names=1)
+
+# remove rare genes
+myT <- myT[ apply( myT,1, median)> 5,]
+
+myTNorm <- myT
+for ( i in 1:ncol(myT))
+{
+	colSum = sum(myT[,i])
+	myTNorm[,i] =myTNorm[,i]/colSum
+}
+```
+
+# Question 1A
+
+For each row in the spreadsheet, perform a one-way ANOVA with categories “day 2”, “week 12” and “week 18”.  Plot out the histogram of all p-values.  How many genes are significant at a BH FDR-corrected 0.05 threshold? 
+
+```{r 1A histogram }
+# create category labels
+cats <- factor(c(rep("day2", 3),
+                 rep("week12", 3),
+                 rep("week18", 5)))
+
+# loop thru genes and compute ANOVA p-values
+pValuesOneWayAnova <- vector()
+
+for (i in 1:nrow(myTNorm)) {
+  myData <- as.numeric(myTNorm[i, ])
+  
+  # build linear model
+  myLm <- lm(myData ~ cats)
+  
+  # extract ANOVA p-value
+  pValuesOneWayAnova[i] <- anova(myLm)[["Pr(>F)"]][1]
+}
+
+# plot histogram of p-values
+hist(pValuesOneWayAnova,
+     breaks = 50,
+     main = "Histogram of ANOVA p-values",
+     xlab = "p-value")
+
+
+```
+
+The histogram above has a large spike near a p-value of zero, meaning that there is a high number of genes that are statistically significant. Besides the spike at zero, the remaining p-values are low in frequency and fairly uniform.
+
+```{r 1A significant genes at a BH FDR-corrected 0.05 threshold}
+# apply BH correction
+pAdj <- p.adjust(pValuesOneWayAnova, method = "BH")
+
+# count significant genes
+sum(pAdj < 0.05)
+```
+
+There are **612** significant genes at a BH FDR-corrected 0.05 threshold.
+
+# Question 1B
+
+Next make an ANOVA as a linear regression as a function of time (so 2 days, 86 days and 128 days).  Plot out the histogram of all p-values.  How many genes are significant at a BH FDR-corrected 0.05 threshold.
+
+```{r 1B histogram}
+# define time variable in days
+time <- c(rep(2, 3),
+          rep(86, 3),
+          rep(128, 5))
+
+# initialize vector to store regression p-values
+pValuesRegression <- vector()
+
+# loop thru each gene & run regression
+for (i in 1:nrow(myTNorm)) {
+  myData <- as.numeric(myTNorm[i, ])
+  
+  myLm <- lm(myData ~ time)
+  
+  pValuesRegression[i] <- anova(myLm)[["Pr(>F)"]][1]
+}
+
+# plot histogram
+hist(pValuesRegression,
+     breaks = 50,
+     main = "Histogram of regression p-values",
+     xlab = "p-value")
+```
+
+Similar to question 1A, the histogram above of regression p-values also has a large spike near 0. The rest of the p-values are still low in frequency and are relatively uniform, but some of the bins are slightly higher than in the histogram from 1A. However, the frequency of the largest spike is lower than it was in question 1A (1000 in 1A vs ~800 in 1B). This suggests that the number of genes that are significant is less when analyzed under a linear model vs a categorical model.
+
+```{r 1B significant genes at a BH FDR-corrected 0.05 threshold}
+# apply BH correction
+pAdjRegression <- p.adjust(pValuesRegression, method = "BH")
+
+# count significant genes
+sum(pAdjRegression < 0.05)
+```
+
+There are **448** genes that are significant at a BH FDR-corrected 0.5 threshold, which is 164 genes less than what was observed under the 3 parameter model.
+
+# Question 1C
+
+Finally, for each row in the spreadsheet perform an ANVOA comparing the three-parameter model from (A) and the two parameter model from (B).  Plot out the histogram of all p-values.  For how many genes is there a significant difference between these two models at a BH FDR-corrected threshold. 
+
+```{r 1C histogram}
+# initialize vector to store model comparison p-values
+pValueModelDiff <- vector()
+
+# loop thru each gene & compare the 2 models
+for (i in 1:nrow(myTNorm)) {
+  myData <- as.numeric(myTNorm[i, ])
+  
+  # linear regression on time
+  modelReduced <- lm(myData ~ time)
+  
+  # categorical ANOVA model
+  modelFull <- lm(myData ~ cats)
+  
+  # extract residual sum of squares (RSS)
+  rssReduced <- sum(resid(modelReduced)^2)
+  rssFull <- sum(resid(modelFull)^2)
+  
+  # degrees of freedom for each model
+  dfReduced <- df.residual(modelReduced)
+  dfFull <- df.residual(modelFull)
+  
+  # compute F statistic for nested model comparison
+  Fstat <- ((rssReduced - rssFull) / (dfReduced - dfFull)) / (rssFull / dfFull)
+  
+  # convert F statistic to p-value
+  pValueModelDiff[i] <- pf(Fstat,
+                           df1 = dfReduced - dfFull,
+                           df2 = dfFull,
+                           lower.tail = FALSE)
+}
+
+# plot histogram
+hist(pValueModelDiff,
+     breaks = 50,
+     main = "Histogram of p-values: categorical vs. linear model",
+     xlab = "p-value")
+```
+
+Similar to the previous 2 questions, the histogram above also shows a large spike near a p-value of zero. This indicates that the categorical model provides a significantly better fit than the linear model for a high number of genes. However, the rest of the p-values have higher frequencies than they did in the histograms from 1A and 1B which suggests that fewer genes show a significant difference between the two models.
+
+```{r 1C significant genes at a BH FDR-corrected 0.05 threshold}
+# apply BH correction
+pAdjModelDiff <- p.adjust(pValueModelDiff, method = "BH")
+
+# count significant genes
+sum(pAdjModelDiff < 0.05)
+```
+
+There are **51** genes that are significant at a BH FDR-corrected 0.05 threshold. This is 561 genes less than the amount of significant genes in 1A and 397 genes less than observed in 1B.
+
+# Question 1D
+
+Make three graphs showing the relative abundance of the most significant gene under each of the three ANOVA models.  For (A) and (C), the x-axis will the category (day 2, week 12 and week 18) and the y-axis will be the relative abundance.  Be sure to properly label and title all graphs and axes.  For (B) the x-axis will be time (in days) and the y-axis will be the relative abundance. For the graph of the top hit from (B), include the regression line for the plot from (B).
+
+```{r identifying significant genes per model}
+# combine results into a data frame
+index <- 1:nrow(myTNorm)
+
+myFrame <- data.frame(index,
+                      pValuesOneWayAnova,
+                      pValuesRegression,
+                      pValueModelDiff)
+
+# order by significance for each model
+topA <- myFrame[order(myFrame$pValuesOneWayAnova), ][1, ]
+topB <- myFrame[order(myFrame$pValuesRegression), ][1, ]
+topC <- myFrame[order(myFrame$pValueModelDiff), ][1, ]
+```
+
+```{r question 1A plot}
+# extract most significant gene from 1A
+geneA <- as.numeric(myTNorm[topA$index, ])
+
+boxplot(geneA ~ cats,
+        main = "Top Gene (One-way ANOVA)",
+        xlab = "Time Category",
+        ylab = "Relative Abundance",
+        col = "lightblue")
+```
+
+The figure above shows that the relative abundance of the top gene differs across time points. Expression is very low at day 2, increases sharply at week 12, and then decreases at week 18. This pattern appears to be non-linear. 
+
+```{r question 1B plot}
+# extract most significant gene from 1B
+geneB <- as.numeric(myTNorm[topB$index, ])
+
+plot(time, geneB,
+     main = "Top Gene (Linear Regression)",
+     xlab = "Time (days)",
+     ylab = "Relative Abundance",
+     pch = 16)
+
+# add regression line
+abline(lm(geneB ~ time), lwd = 2)
+```
+
+The plot above shows a linear trend where expression is highest at day 2 and progressively gets lower at weeks 12 and 18, respectively. The fitted regression line has a negative slope.
+
+```{r question 1C plot}
+# extract most significant gene from 1C
+geneC <- as.numeric(myTNorm[topC$index, ])
+
+boxplot(geneC ~ cats,
+        main = "Top Gene (Model Comparison)",
+        xlab = "Time Category",
+        ylab = "Relative Abundance",
+        col = "lightgreen")
+```
+
+The boxplot for the most significant gene in 1C is identical to that in 1A (see below for explanation of why this has occurred).
+
+```{r top gene zoom}
+topA$index
+topC$index
+```
+
+The code chunk above shows that the top gene identified in 1A and 1C are the same, which explains why their boxplots look identical.
+
+# Question 1E
+
+Overall, do you think the three parameter model in (A) or the two-parameter model in (B) is more appropriate for these data?  Justify your answer.
+
+I think the 3 parameter model in (A) is more appropriate for these data because, in addition to having more significant genes at a BH FDR-corrected 0.05 threshold than (B), the results from question 1C show that the additional complexity of the categorical model is a better fit for these data for many genes. The top gene identified in (A) and (C) is the same, indicating it follows a non-linear trajectory over time. This clear deviation highlights why the linear model fails here and why the categorical approach is better for capturing these data patterns.
+
+
+#### Disclaimer: AI was used to help generate some code.
